@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot de Ordem de Serviço</title>
+    <!-- Carrega Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carrega a fonte Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Tema Pista de Corrida - Fundo escuro */
+            background-color: #111827; /* gray-900 */
+        }
+        /* Padrão de Chequered Flag (xadrez) para o fundo da janela de chat */
+        .chat-bg {
+            background-color: #374151; /* gray-700 */
+            background-image: 
+                linear-gradient(45deg, #4b5563 25%, transparent 25%), 
+                linear-gradient(-45deg, #4b5563 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #4b5563 75%), 
+                linear-gradient(-45deg, transparent 75%, #4b5563 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        /* Custom scrollbar escuro */
+        #chat-window::-webkit-scrollbar {
+            width: 6px;
+        }
+        #chat-window::-webkit-scrollbar-track {
+            background: #1f2937; /* gray-800 */
+            border-radius: 10px;
+        }
+        #chat-window::-webkit-scrollbar-thumb {
+            background: #4b5563; /* gray-600 */
+            border-radius: 10px;
+        }
+        #chat-window::-webkit-scrollbar-thumb:hover {
+            background: #6b7280; /* gray-500 */
+        }
+        .chat-bubble {
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        /* Markdown simples para o resumo */
+        .chat-bubble strong {
+            font-weight: 600;
+            color: #d1d5db; /* gray-300 */
+        }
+        .chat-bubble ul {
+            list-style-type: disc;
+            padding-left: 20px;
+        }
+        /* Animação do indicador de digitação (dots mais claros) */
+        .dot-flashing {
+            position: relative;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #9ca3af;
+            color: #9ca3af;
+            animation: dotFlashing 1s infinite linear alternate;
+            animation-delay: .5s;
+        }
+        .dot-flashing::before, .dot-flashing::after {
+            content: '';
+            display: inline-block;
+            position: absolute;
+            top: 0;
+        }
+        .dot-flashing::before {
+            left: -12px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #9ca3af;
+            color: #9ca3af;
+            animation: dotFlashing 1s infinite alternate;
+            animation-delay: 0s;
+        }
+        .dot-flashing::after {
+            left: 12px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #9ca3af;
+            color: #9ca3af;
+            animation: dotFlashing 1s infinite alternate;
+            animation-delay: 1s;
+        }
+        @keyframes dotFlashing {
+            0% { background-color: #9ca3af; }
+            50%, 100% { background-color: #4b5563; }
+        }
+        /* Modal de Confirmação (LocalStorage) */
+        #reload-modal {
+            transition: opacity 0.2s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-900">
+
+    <!-- Modal de Recarregar (LocalStorage) -->
+    <div id="reload-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full text-center">
+            <h3 class="text-lg font-medium text-gray-900 mb-2">🏁 Bem-vindo de volta!</h3>
+            <p class="text-sm text-gray-600 mb-6">Encontramos dados de uma OS não finalizada. Deseja continuar de onde parou?</p>
+            <div class="flex justify-center space-x-4">
+                <button id="reset-confirm-btn" class="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors">
+                    Recomeçar
+                </button>
+                <button id="continue-btn" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors">
+                    Continuar
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="flex flex-col h-screen max-w-2xl mx-auto bg-gray-800 shadow-2xl rounded-lg overflow-hidden my-0 sm:my-4">
+        
+        <!-- Cabeçalho -->
+        <header class="bg-gray-900 border-b border-gray-700 p-4 shadow-sm flex justify-between items-center">
+            <h1 class="text-xl font-bold text-gray-100 text-center">🏁 Agente de OS 🔧</h1>
+            <button
+                id="reset-btn"
+                title="Recomeçar Conversa"
+                class="px-4 py-2 text-sm text-white font-semibold bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-gray-900 transition-colors duration-200"
+            >
+                Recomeçar
+            </button>
+        </header>
+
+        <!-- Janela do Chat -->
+        <main id="chat-window" class="flex-grow p-4 sm:p-6 space-y-4 overflow-y-auto chat-bg">
+            <!-- Mensagens do chat serão injetadas aqui -->
+        </main>
+
+        <!-- Indicador de Digitação -->
+        <div id="typing-indicator" class="px-6 py-2 hidden">
+            <div class="flex items-center space-x-2">
+                <div class="chat-bubble py-3 px-4 rounded-lg bg-gray-700">
+                    <div class="dot-flashing"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Área de Upload de Logo (Inicialmente Oculta) -->
+        <div id="file-upload-area" class="hidden p-4 bg-gray-800 border-t border-gray-700">
+            <label for="logo-file-input" class="block mb-2 text-sm font-medium text-gray-300">Selecione o arquivo de logo:</label>
+            <div class="flex items-center space-x-3">
+                <input type="file" id="logo-file-input" accept="image/png, image/jpeg" class="flex-1 w-full text-sm text-gray-300
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-lg file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-blue-900 file:text-blue-200
+                    hover:file:bg-blue-800
+                ">
+                <button 
+                    id="skip-logo-btn"
+                    class="px-5 py-2 text-gray-200 font-semibold bg-gray-600 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors duration-200"
+                >
+                    Pular
+                </button>
+            </div>
+            <p id="file-upload-status" class="text-sm text-gray-400 mt-2"></p>
+        </div>
+
+        <!-- Input de Mensagem -->
+        <footer id="chat-footer" class="bg-gray-900 border-t border-gray-700 p-4">
+            <form id="chat-form" class="flex items-center space-x-3">
+                <input 
+                    type="text" 
+                    id="message-input"
+                    placeholder="Digite 'p' para pular..."
+                    autocomplete="off"
+                    class="flex-1 w-full px-4 py-2 text-gray-100 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
+                >
+                <button 
+                    type="submit" 
+                    id="send-button"
+                    class="px-5 py-2 text-white font-semibold bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 transition-colors duration-200"
+                >
+                    Enviar
+                </button>
+            </form>
+        </footer>
+
+    </div>
+
+    <script>
+        const chatWindow = document.getElementById('chat-window');
+        const chatForm = document.getElementById('chat-form');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const typingIndicator = document.getElementById('typing-indicator');
+        
+        // --- Novos Elementos ---
+        const chatFooter = document.getElementById('chat-footer');
+        const fileUploadArea = document.getElementById('file-upload-area');
+        const logoFileInput = document.getElementById('logo-file-input');
+        const skipLogoBtn = document.getElementById('skip-logo-btn');
+        const fileUploadStatus = document.getElementById('file-upload-status');
+        const resetBtn = document.getElementById('reset-btn');
+        const reloadModal = document.getElementById('reload-modal');
+        const continueBtn = document.getElementById('continue-btn');
+        const resetConfirmBtn = document.getElementById('reset-confirm-btn');
+
+        // --- Estado da Aplicação ---
+        let conversationHistory = [];
+        let uploadedLogoData = null;
+
+        // --- Constantes de LocalStorage ---
+        const HISTORY_KEY = 'chatHistory_os';
+        const LOGO_KEY = 'logoData_os';
+
+        // --- Funções de Formatação (sem alterações) ---
+        function toTitleCase(str) {
+// ... (código existente, sem alterações) ...
+            if (!str) return '';
+            return str.toLowerCase().split(' ').map(word => {
+                return (word.charAt(0).toUpperCase() + word.slice(1));
+            }).join(' ');
+        }
+        function formatPhone(str) {
+// ... (código existente, sem alterações) ...
+            if (!str) return '';
+            const digits = str.replace(/\D/g, '');
+            if (digits.length === 11) {
+                return digits.replace(/(\d{2})(\d{1})(\d{4})(\d{4})/, '($1) $2$3-$4');
+            }
+            if (digits.length === 10) {
+                return digits.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
+            }
+            return str;
+        }
+        function formatCPFCNPJ(str) {
+// ... (código existente, sem alterações) ...
+            if (!str) return '';
+            const digits = str.replace(/\D/g, '');
+            if (digits.length === 11) {
+                return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+            }
+            if (digits.length === 14) {
+                return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+            }
+            return str;
+        }
+
+        // --- Funções do Chat ---
+
+        // Função para adicionar mensagem ao chat
+        function addMessageToChat(role, message) {
+// ... (código existente, sem alterações) ...
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('flex', 'chat-bubble');
+            
+            let bubbleClasses = '';
+            
+            const sanitizer = document.createElement('div');
+            sanitizer.textContent = message;
+            
+            if (role === 'user' && message.startsWith('[Logo Anexado')) {
+                 sanitizer.textContent = `[Logo Anexado]`;
+            }
+
+            // *** NOVO: Markdown Simples para Resumo ***
+            let formattedMessage = sanitizer.innerHTML
+                .replace(/\n/g, '<br>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong class="text-blue-300">$1</strong>') // Negrito
+                .replace(/- (.*?)($|<br>)/g, '<li class="ml-4 list-disc">$1</li>'); // Itens de lista
+            
+            if (role === 'user') {
+                messageElement.classList.add('justify-end');
+                bubbleClasses = 'bg-blue-600 text-white';
+            } else {
+                messageElement.classList.add('justify-start');
+                // *** NOVO: Cor de bolha escura ***
+                bubbleClasses = 'bg-gray-700 text-gray-100';
+            }
+            
+            messageElement.innerHTML = `<div class="py-2 px-4 rounded-lg shadow-sm ${bubbleClasses}">${formattedMessage}</div>`;
+            chatWindow.appendChild(messageElement);
+            
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+            if (role === 'bot' && (message.includes('logo') || message.includes('anexe'))) {
+                toggleUploadUI(true);
+            }
+        }
+
+        // Função para criar o link de download e o botão de restart
+        function createDownloadLink(url, message) {
+// ... (código existente, sem alterações) ...
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('flex', 'justify-start');
+            messageElement.innerHTML = `
+                <div class="py-3 px-4 rounded-lg shadow-sm bg-gray-700 text-gray-100 space-y-3">
+                    <p>${message}</p>
+                    <a 
+                        href="${url}" 
+                        download 
+                        target="_blank"
+                        class="inline-block px-4 py-2 text-white font-semibold bg-green-600 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors duration-200"
+                    >
+                        Baixar PDF
+                    </a>
+                    <button
+                        id="restart-link-btn"
+                        class="ml-3 inline-block px-4 py-2 text-blue-700 font-semibold bg-blue-100 rounded-lg hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200"
+                    >
+                        Gerar Outra OS 🏁
+                    </button>
+                </div>
+            `;
+            chatWindow.appendChild(messageElement);
+
+            document.getElementById('restart-link-btn').addEventListener('click', clearChatAndRestart);
+
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        // --- Funções de LocalStorage e Estado ---
+
+        function saveState() {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(conversationHistory));
+            if (uploadedLogoData) {
+                localStorage.setItem(LOGO_KEY, uploadedLogoData);
+            } else {
+                localStorage.removeItem(LOGO_KEY);
+            }
+        }
+
+        function loadState() {
+            const savedHistory = localStorage.getItem(HISTORY_KEY);
+            const savedLogo = localStorage.getItem(LOGO_KEY);
+            
+            if (savedHistory && JSON.parse(savedHistory).length > 0) {
+                conversationHistory = JSON.parse(savedHistory);
+                if (savedLogo) {
+                    uploadedLogoData = savedLogo;
+                }
+                return true; // Encontrou dados
+            }
+            return false; // Sem dados
+        }
+
+        function clearStateAndStorage() {
+            conversationHistory = [];
+            uploadedLogoData = null;
+            localStorage.removeItem(HISTORY_KEY);
+            localStorage.removeItem(LOGO_KEY);
+        }
+
+        function repopulateChat() {
+            chatWindow.innerHTML = '';
+            conversationHistory.forEach(msg => {
+                addMessageToChat(msg.role, msg.content);
+            });
+            showTyping(false); // Garante que a UI esteja desbloqueada
+        }
+
+
+        // Função para enviar mensagem ao backend
+        async function sendMessage(event, overrideMessage = null) {
+// ... (código existente, sem alterações) ...
+            if (event) event.preventDefault();
+
+            let message = overrideMessage ? overrideMessage : messageInput.value.trim();
+            if (message === '' && !overrideMessage) return;
+
+            let formattedMessage = message;
+// ... (código existente, sem alterações) ...
+            let messageForHistory = message;
+            let messageForAPI = message;
+
+            if (overrideMessage === '[LOGO_ANEXADO]') {
+                messageForHistory = '[Logo Anexado]';
+// ... (código existente, sem alterações) ...
+                messageForAPI = '[LOGO_ANEXADO]';
+            } else if (!overrideMessage) {
+                const lastQuestion = conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1].content.toLowerCase() : '';
+                
+                if (lastQuestion.includes('nome do cliente') || lastQuestion.includes('nome da sua oficina') || lastQuestion.includes('responsável')) {
+                    formattedMessage = toTitleCase(message);
+                } else if (lastQuestion.includes('telefone')) {
+                    formattedMessage = formatPhone(message);
+                } else if (lastQuestion.includes('cpf/cnpj')) {
+                    formattedMessage = formatCPFCNPJ(message);
+                } else if (lastQuestion.includes('placa')) {
+                    formattedMessage = message.toUpperCase();
+                }
+                messageForHistory = formattedMessage;
+                messageForAPI = formattedMessage;
+            }
+
+            addMessageToChat('user', messageForHistory);
+            conversationHistory.push({ role: 'user', content: messageForHistory });
+            saveState(); // Salva o histórico após adicionar a msg do usuário
+            
+            messageInput.value = '';
+            showTyping(true);
+
+            let requestBody = {
+// ... (código existente, sem alterações) ...
+                message: messageForAPI,
+                history: conversationHistory.slice(0, -1)
+            };
+
+            const lastBotMessage = conversationHistory.length > 1 ? conversationHistory[conversationHistory.length - 2].content.toLowerCase() : '';
+            if ((messageForAPI.toLowerCase() === 'sim' || messageForAPI.toLowerCase() === 's') &&
+                lastBotMessage.includes('gerar o pdf') &&
+                uploadedLogoData) {
+                
+                console.log("Anexando dados do logo à requisição final.");
+                requestBody.logo_data = uploadedLogoData;
+                uploadedLogoData = null;
+                saveState(); // Salva o estado (sem logo)
+            }
+// ... (código existente, sem alterações) ...
+
+            try {
+                const response = await fetch('/chat', {
+// ... (código existente, sem alterações) ...
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody),
+                });
+
+                showTyping(false);
+
+                if (!response.ok) {
+// ... (código existente, sem alterações) ...
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Erro na resposta do servidor.');
+                }
+
+                const data = await response.json();
+                
+                if (data.type === 'pdf') {
+                    createDownloadLink(data.url, data.message);
+                    // Não adiciona PDF ao histórico, mas limpa o estado para a próxima
+                    clearStateAndStorage();
+                } else if (data.type === 'chat') {
+// ... (código existente, sem alterações) ...
+                    addMessageToChat('bot', data.message);
+                    conversationHistory.push({ role: 'assistant', content: data.message });
+                    saveState(); // Salva o histórico após adicionar a msg do bot
+                } else if (data.type === 'error') {
+                     addMessageToChat('bot', `Erro: ${data.message}`);
+// ... (código existente, sem alterações) ...
+                     conversationHistory.pop();
+                     saveState(); // Salva o histórico corrigido
+                }
+
+            } catch (error) {
+// ... (código existente, sem alterações) ...
+                showTyping(false);
+                addMessageToChat('bot', `Desculpe, ocorreu um erro: ${error.message}. Tente novamente.`);
+                console.error('Erro no fetch:', error);
+                conversationHistory.pop();
+                saveState(); // Salva o histórico corrigido
+            }
+        }
+        
+        function showTyping(isLoading) {
+// ... (código existente, sem alterações) ...
+            if (isLoading) {
+                typingIndicator.classList.remove('hidden');
+                sendButton.disabled = true;
+                messageInput.disabled = true;
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            } else {
+                typingIndicator.classList.add('hidden');
+                sendButton.disabled = false;
+                messageInput.disabled = false;
+                if (!fileUploadArea.classList.contains('hidden')) {
+                    // Não foca se a área de upload estiver visível
+                } else {
+                    messageInput.focus();
+                }
+            }
+        }
+        
+        // Controla a visibilidade do Input de Texto vs Upload de Arquivo
+        function toggleUploadUI(showUploader) {
+// ... (código existente, sem alterações) ...
+            if (showUploader) {
+                chatFooter.classList.add('hidden');
+                fileUploadArea.classList.remove('hidden');
+                fileUploadStatus.textContent = '';
+                logoFileInput.value = '';
+            } else {
+                chatFooter.classList.remove('hidden');
+                fileUploadArea.classList.add('hidden');
+                messageInput.focus();
+            }
+        }
+
+        // Função para iniciar uma NOVA conversa
+        async function startChat() {
+            chatWindow.innerHTML = '';
+// ... (código existente, sem alterações) ...
+            clearStateAndStorage(); // Limpa tudo
+            showTyping(true);
+            try {
+                const response = await fetch('/chat', {
+// ... (código existente, sem alterações) ...
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ history: [] })
+                });
+                
+                const data = await response.json();
+                
+                if (data.type === 'chat') {
+                    addMessageToChat('bot', data.message);
+                    conversationHistory.push({ role: 'assistant', content: data.message });
+                    saveState(); // Salva o primeiro passo
+                }
+            } catch (error) {
+                addMessageToChat('bot', 'Erro ao iniciar o chat. Recarregue a página.');
+            } finally {
+                showTyping(false);
+            }
+        }
+        
+        // *** NOVA: Função de limpar e recomeçar (chamada pelos botões) ***
+        function clearChatAndRestart() {
+            addMessageToChat('bot', 'Ok, recomeçando do zero... 🏁');
+            startChat();
+        }
+
+        // --- Event Listeners Adicionais ---
+        chatForm.addEventListener('submit', sendMessage);
+        
+        skipLogoBtn.addEventListener('click', () => {
+// ... (código existente, sem alterações) ...
+            sendMessage(null, 'p'); 
+            toggleUploadUI(false);
+        });
+
+        logoFileInput.addEventListener('change', (event) => {
+// ... (código existente, sem alterações) ...
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (file.size > 5 * 1024 * 1024) {
+// ... (código existente, sem alterações) ...
+                fileUploadStatus.textContent = 'Arquivo muito grande (Máx 5MB).';
+                return;
+            }
+            if (!['image/png', 'image/jpeg'].includes(file.type)) {
+// ... (código existente, sem alterações) ...
+                fileUploadStatus.textContent = 'Tipo de arquivo inválido (use PNG ou JPG).';
+                return;
+            }
+
+            fileUploadStatus.textContent = `Carregando ${file.name}...`;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const base64Data = e.target.result;
+                uploadedLogoData = base64Data; 
+                saveState(); // Salva o logo no localStorage
+                sendMessage(null, '[LOGO_ANEXADO]');
+                toggleUploadUI(false);
+            };
+// ... (código existente, sem alterações) ...
+            reader.onerror = () => {
+                fileUploadStatus.textContent = 'Erro ao ler o arquivo.';
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        // *** NOVOS Listeners (Modal e Reset) ***
+        resetBtn.addEventListener('click', () => {
+             // Apenas limpa e reinicia, sem perguntar
+             clearChatAndRestart();
+        });
+
+        continueBtn.addEventListener('click', () => {
+            reloadModal.classList.add('hidden', 'opacity-0');
+            repopulateChat();
+        });
+
+        resetConfirmBtn.addEventListener('click', () => {
+            reloadModal.classList.add('hidden', 'opacity-0');
+            startChat(); // Inicia um chat do zero
+        });
+        
+        // --- Lógica de Inicialização (Verifica LocalStorage) ---
+        window.onload = () => {
+            if (loadState()) {
+                // Se carregou dados, mostra o modal
+                reloadModal.classList.remove('hidden');
+                reloadModal.classList.remove('opacity-0'); // Para transição (se houver)
+            } else {
+                // Se não há dados, inicia o chat normalmente
+                startChat();
+            }
+        };
+
+    </script>
+</body>
+</html>
+
